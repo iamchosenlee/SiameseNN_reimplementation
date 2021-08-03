@@ -1,52 +1,53 @@
 import torch
 import torch.nn as nn
 
+class SiameseNN(nn.Module):
 
-class Siamese(nn.Module):
     def __init__(self):
-        super(Net, self).__init__()
-        
-        # Conv2d(input_channels, output_channels, kernel_size)
-        self.conv1 = nn.Conv2d(1, 64, 10) 
-        self.conv2 = nn.Conv2d(64, 128, 7)  
-        self.conv3 = nn.Conv2d(128, 128, 4)
-        self.conv4 = nn.Conv2d(128, 256, 4)
-        self.bn1 = nn.BatchNorm2d(64)
-        self.bn2 = nn.BatchNorm2d(128)
-        self.bn3 = nn.BatchNorm2d(128)
-        self.bn4 = nn.BatchNorm2d(256)
-        self.dropout1 = nn.Dropout(0.1)
-        self.dropout2 = nn.Dropout(0.5)
-        self.fc1 = nn.Linear(256 * 6 * 6, 4096)
-        self.fcOut = nn.Linear(4096, 1)
-        self.sigmoid = nn.Sigmoid()
-    
-    def convs(self, x):
-        # out_dim = in_dim - kernel_size + 1  
-        #1, 105, 105
-        x = F.relu(self.bn1(self.conv1(x)))
-        # 64, 96, 96
-        x = F.max_pool2d(x, (2,2))
-        # 64, 48, 48
-        x = F.relu(self.bn2(self.conv2(x)))
-        # 128, 42, 42
-        x = F.max_pool2d(x, (2,2))
-        # 128, 21, 21
-        x = F.relu(self.bn3(self.conv3(x)))
-        # 128, 18, 18
-        x = F.max_pool2d(x, (2,2))
-        # 128, 9, 9
-        x = F.relu(self.bn4(self.conv4(x)))
-        # 256, 6, 6
+        super(SiameseNN, self).__init__()
+        self.conv_layer = nn.Sequential(
+                            nn.Conv2d(1, 64, 10),
+                            nn.ReLU(),
+                            nn.MaxPool2d(2, 2),
+                            nn.Conv2d(64, 128, 7),
+                            nn.ReLU(),
+                            nn.MaxPool2d(2, 2),
+                            nn.Conv2d(128, 128, 4),
+                            nn.ReLU(),
+                            nn.MaxPool2d(2, 2),
+                            nn.Conv2d(128, 256, 4),
+                            nn.ReLU()
+                            )
+
+        self.fc_layer = nn.Sequential(
+                        nn.Linear(256 * 6 * 6, 4096), 
+                        nn.Sigmoid())
+        self.fc_out    = nn.Sequential(
+                        nn.Linear(4096, 1) ,
+                        nn.Sigmoid())
+
+    def encoder(self, x):
+        x = self.conv_layer(x)
+        x = self.fc_layer(torch.flatten(x, start_dim=1))
         return x
 
-    def forward(self, x1, x2):
-        x1 = self.convs(x1)
-        x1 = x1.view(-1, 256 * 6 * 6)
-        x1 = self.sigmoid(self.fc1(x1))
-        x2 = self.convs(x2)
-        x2 = x2.view(-1, 256 * 6 * 6)
-        x2 = self.sigmoid(self.fc1(x2))
-        x = torch.abs(x1 - x2)
-        x = self.fcOut(x)
-        return x
+    def init_weights(m):
+        if isinstance(m, nn.Conv2d):
+            nn.init.normal_(m.weight, mean=0, std=0.01)
+            nn.init.normal_(m.bias, mean=0.5, std=0.01)
+        if isinstance(m, nn.Linear):
+            nn.init.normal_(m.weight, mean=0, std=0.2)
+            nn.init.normal_(m.bias, mean=0.5, std=0.01)
+
+    
+    def forward(self, img1, img2):
+        hidden1 = self.encoder(img1)
+        hidden2 = self.encoder(img2)
+        dist    = torch.abs(hidden1 - hidden2)
+        out     = self.fc_out(dist)
+        return out
+
+if __name__ == '__main__':
+    model = SiameseNN()
+    print(model)
+    print(model.state_dict().keys())
